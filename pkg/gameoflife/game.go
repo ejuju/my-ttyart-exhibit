@@ -2,9 +2,9 @@ package gameoflife
 
 import (
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
-	"os/signal"
 	"time"
 
 	"github.com/ejuju/my-ttyart-exhibit/pkg/tty"
@@ -12,36 +12,62 @@ import (
 )
 
 func Run() (err error) {
-	// Hide terminal cursor and restore terminal state on exit.
-	f := os.Stdout
-	tui := tty.UI{Writer: f}
-	tui.HideCursor()
-	defer tui.ShowCursor()
-	defer tui.ResetTextStyle()
-
-	// Create new random grid.
-	width, height, err := term.GetSize(int(f.Fd()))
-	if err != nil {
-		return fmt.Errorf("get terminal size: %w", err)
-	}
-	width = width / 2 // We use two-character of text width per cell.
-	g := makeGrid(width, height)
-	g.randomize(0)
-
-	// Run game until interrupt signal is received.
-	ticker := time.NewTicker(75 * time.Millisecond)
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt)
+Base:
 	for {
-		select {
-		case <-interrupt:
-			return nil
-		case <-ticker.C:
-			changed := g.update()
-			if !changed {
-				return nil
+		// Hide terminal cursor and restore terminal state on exit.
+		f := os.Stdout
+
+		// Create new random grid.
+		width, height, err := term.GetSize(int(f.Fd()))
+		if err != nil {
+			return fmt.Errorf("get terminal size: %w", err)
+		}
+		width = width / 2 // We use two-character of text width per cell.
+		g := makeGrid(width, height)
+		g.randomize(0)
+
+		// Use terminal raw mode.
+		state, err := term.MakeRaw(int(os.Stdin.Fd()))
+		if err != nil {
+			return fmt.Errorf("use terminal raw mode: %w", err)
+		}
+		defer term.Restore(int(os.Stdin.Fd()), state)
+
+		// Read user input.
+		input := make(chan byte, 1)
+		go func() {
+			for {
+				b := [1]byte{}
+				_, err := io.ReadFull(os.Stdin, b[:])
+				if err != nil {
+					panic(err)
+				}
+				input <- b[0]
 			}
-			g.render(tui)
+		}()
+
+		// Run game loop.
+		tui := tty.UI{Writer: f}
+		tui.HideCursor()
+		defer tui.ShowCursor()
+		defer tui.ResetTextStyle()
+		ticker := time.NewTicker(75 * time.Millisecond)
+		for {
+			select {
+			case b := <-input:
+				switch b {
+				default:
+					continue Base
+				case 'q':
+					return nil
+				}
+			case <-ticker.C:
+				changed := g.update()
+				if !changed {
+					return nil
+				}
+				g.render(tui)
+			}
 		}
 	}
 }
