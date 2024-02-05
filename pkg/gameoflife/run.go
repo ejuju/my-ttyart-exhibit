@@ -1,3 +1,4 @@
+// Conway's Game of life.
 package gameoflife
 
 import (
@@ -54,7 +55,7 @@ Base:
 			goto Base
 		case b := <-input:
 			switch {
-			default:
+			case b == 'r':
 				goto Base
 			case b == 'q':
 				return nil
@@ -124,7 +125,8 @@ func (g *game) tick(ui tty.TUI) {
 			ui.SetBackgroundRGB(0, 0, 0)
 		} else {
 			txt = " " + strconv.Itoa(count)
-			ui.SetBackgroundRGB(0xBB, 0x11, 0xFF)
+			ui.SetForegroundRGB(0, 0, 0)
+			ui.SetBackgroundRGB(0x39, 0xFF, 0x14)
 		}
 		ui.MoveTo(x*2, y)
 		ui.Print(txt)
@@ -134,17 +136,18 @@ func (g *game) tick(ui tty.TUI) {
 	g.cells = next
 
 	// Render bottom banner.
-	ui.SetBackgroundRGB(16, 16, 16)
+	ui.SetForegroundRGB(0, 255, 0)
+	ui.SetBackgroundRGB(0, 0, 0)
 
 	ui.MoveTo(0, g.height)
-	content := fmt.Sprintf("#%d | %d FPS | Generation %d | Population %d", g.numRuns, g.fps, g.generation, population)
+	content := fmt.Sprintf("#%d | Generation %d (%d/s) | Population %d", g.numRuns, g.generation, g.fps, population)
 	ui.Print(content + strings.Repeat(" ", g.width*2-len(content)))
 
 	ui.MoveTo(0, g.height+1)
-	content = "'+' = speed up | '-' = slow down | 'q' = quit | Press any other key to restart."
+	content = "Actions: '+' = speed up | '-' = slow down | 'q' = quit | 'r' = restart"
 	ui.Print(content + strings.Repeat(" ", g.width*2-len(content)))
 
 	ui.MoveTo(0, g.height+2)
-	content = "Game of Life - John Conway"
+	content = "Conway's Game of life"
 	ui.Print(content + strings.Repeat(" ", g.width*2-len(content)))
 }

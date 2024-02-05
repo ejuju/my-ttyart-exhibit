@@ -37,6 +37,7 @@ func (ui TUI) MoveTo(x, y int)                { ui.Printf("\x1b[%d;%dH", y+1, x+
 func (ui TUI) HideCursor()                    { ui.Print("\x1b[?25l") }
 func (ui TUI) ShowCursor()                    { ui.Print("\x1b[?25h") }
 func (ui TUI) ResetTextStyle()                { ui.Print("\x1b[0m") }
+func (ui TUI) SetForegroundRGB(r, g, b uint8) { ui.Printf("\x1b[38;2;%d;%d;%dm", r, g, b) }
 func (ui TUI) SetBackgroundRGB(r, g, b uint8) { ui.Printf("\x1b[48;2;%d;%d;%dm", r, g, b) }
 
 func (ui TUI) Size() (width, height int, err error) {
