@@ -1,10 +1,15 @@
 # TTY art
 
 - `gameoflife` Conway's Game of life
-- `markocode` Markov-chain-quine
+- `markode` Markov-chain-quine
+
+Build and install from source
+```bash
+go install github.com/ejuju/my-ttyart-exhibit@latest
+```
 
 Run
 ```bash
-go install github.com/ejuju/my-ttyart-exhibit@latest
-my-ttyart-exhibit
+my-ttyart-exhibit gameoflife
+my-ttyart-exhibit markode
 ```

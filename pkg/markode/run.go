@@ -37,7 +37,6 @@ func Run() (err error) {
 		mc:          mc,
 		lastchars:   start,
 	}
-	ui.Print(string(start[:]))
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
