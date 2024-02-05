@@ -3,6 +3,8 @@ package gameoflife
 import (
 	"fmt"
 	"math/rand"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ejuju/my-ttyart-exhibit/pkg/tty"
@@ -10,99 +12,103 @@ import (
 
 func Run() (err error) {
 	// Hide terminal cursor and restore terminal state on exit.
-	tui := tty.NewTUI()
-	tui.HideCursor()
-	tui.EraseEntireScreen()
-	defer tui.ShowCursor()
-	defer tui.ResetTextStyle()
+	ui := tty.NewTUI()
+	ui.HideCursor()
+	ui.EraseEntireScreen()
+	defer ui.ShowCursor()
+	defer ui.ResetTextStyle()
 
 	// Use terminal raw mode.
 	input := make(chan byte)
-	err = tui.GoListenRaw(input)
+	err = ui.GoListenRaw(input)
 	if err != nil {
 		return fmt.Errorf("use terminal raw mode: %w", err)
 	}
-	defer tui.Restore()
+	defer ui.Restore()
 
-	// Create new random grid.
-	width, height, err := tui.Size()
+	g := game{fps: 10}
+
+Base:
+	// Create new random grid depending on terminal size.
+	g.width, g.height, err = ui.Size()
 	if err != nil {
 		return fmt.Errorf("get terminal size: %w", err)
 	}
-	width = width / 2   // We use two-character of text width per cell.
-	height = height - 2 // We use the bottom two lines for banner.
-	g := game{cells: makeCells(width, height-2)}
+	g.width = g.width / 2   // We use two-character of text width per cell.
+	g.height = g.height - 3 // We use the bottom lines for banner.
 
-Base:
+	ui.ResetTextStyle()
+	ui.MoveTo(0, 0)
+	ui.EraseEntireScreen()
+
+	g.numRuns++
+	g.generation = 0
+	g.cells = randomCells(time.Now().UnixNano(), g.width, g.height)
+
+	generationTicker := time.NewTicker(time.Second / time.Duration(g.fps))
+	timeoutTimer := time.NewTimer(5 * time.Minute)
+
 	// Run game loop.
 	for {
-		g.numRuns++
-		g.generation = 0
-		g.randomize(time.Now().UnixNano())
-		g.render(tui)
-
-		ticker := time.NewTicker(100 * time.Millisecond)
-		previousPopulationCounts := [2]int{}
-		for {
-			select {
-			case b := <-input:
-				tui.ResetTextStyle()
-				tui.MoveTo(0, 0)
-				tui.EraseEntireScreen()
-				switch b {
-				default:
-					continue Base
-				case 'q':
-					return nil
+		select {
+		case <-timeoutTimer.C:
+			goto Base
+		case b := <-input:
+			switch b {
+			default:
+				goto Base
+			case 'q':
+				return nil
+			case '+':
+				if g.fps < 60 {
+					g.fps++
 				}
-			case <-ticker.C:
-				changed := g.update()
-				if !changed {
-					return nil
+				generationTicker.Reset(time.Second / time.Duration(g.fps))
+			case '-':
+				if g.fps > 1 {
+					g.fps--
 				}
-				population := g.population()
-				isStuck := previousPopulationCounts[0] == population && previousPopulationCounts[1] == population
-				if isStuck {
-					continue Base
-				}
-				previousPopulationCounts[0] = previousPopulationCounts[1]
-				previousPopulationCounts[1] = population
-
-				g.render(tui)
+				generationTicker.Reset(time.Second / time.Duration(g.fps))
 			}
+		case <-generationTicker.C:
+			g.update(ui)
 		}
 	}
 }
 
 type game struct {
-	numRuns    int
-	generation int
-	cells      [][]bool
+	numRuns       int
+	generation    int
+	width, height int
+	cells         []cell
+	fps           int
 }
 
-func (g game) width() int  { return len(g.cells) }
-func (g game) height() int { return len(g.cells[0]) }
+type cell struct {
+	x, y int
+}
 
-func makeCells(width, height int) (cells [][]bool) {
-	cells = make([][]bool, width)
+func randomCells(seed int64, width, height int) (cells []cell) {
+	randr := rand.New(rand.NewSource(seed))
 	for x := 0; x < width; x++ {
-		cells[x] = make([]bool, height)
+		for y := 0; y < height; y++ {
+			if randr.Int()%2 == 0 {
+				cells = append(cells, cell{x: x, y: y})
+			}
+		}
 	}
 	return cells
 }
 
-func (g game) randomize(seed int64) {
-	randr := rand.New(rand.NewSource(seed))
-	for x := 0; x < g.width(); x++ {
-		for y := 0; y < g.height(); y++ {
-			g.cells[x][y] = randr.Int()%2 == 0
+func (g game) isAlive(x, y int) bool {
+	x = (g.width + x) % g.width
+	y = (g.height + y) % g.height
+	for _, c := range g.cells {
+		if c.x == x && c.y == y {
+			return true
 		}
 	}
-}
-
-func (g game) at(x, y int) bool {
-	width, height := g.width(), g.height()
-	return g.cells[(width+x)%width][(height+y)%height]
+	return false
 }
 
 func (g game) countNeighbours(x, y int) (count int) {
@@ -110,7 +116,7 @@ func (g game) countNeighbours(x, y int) (count int) {
 		for j := x - 1; j <= x+1; j++ {
 			if i == y && j == x {
 				continue // Ignore own position.
-			} else if g.at(j, i) {
+			} else if g.isAlive(j, i) {
 				count++
 			}
 		}
@@ -118,55 +124,46 @@ func (g game) countNeighbours(x, y int) (count int) {
 	return count
 }
 
-func (g game) population() (count int) {
-	for x := 0; x < g.width(); x++ {
-		for y := 0; y < g.height(); y++ {
-			if g.at(x, y) {
-				count++
-			}
-		}
-	}
-	return count
-}
-
-func (g *game) update() (changed bool) {
-	next := makeCells(g.width(), g.height())
-	for x := 0; x < g.width(); x++ {
-		for y := 0; y < g.height(); y++ {
+func (g *game) update(ui tty.TUI) {
+	next := make([]cell, 0, g.width*g.height)
+	for x := 0; x < g.width; x++ {
+		for y := 0; y < g.height; y++ {
 			count := g.countNeighbours(x, y)
-			alive := g.at(x, y)
-			if (alive && (count == 2 || count == 3)) || (!alive && count == 3) {
-				next[x][y] = true
-				changed = true
+			isAliveNow := g.isAlive(x, y)
+			isAliveNext := (isAliveNow && (count == 2 || count == 3)) || (!isAliveNow && count == 3)
+			if isAliveNext {
+				next = append(next, cell{x: x, y: y})
 			}
+
+			if isAliveNext {
+				ui.SetBackgroundRGB(127, 0, 128+uint8((x+y+g.generation)%256)/2)
+			} else {
+				ui.SetBackgroundRGB(0, 0, 0)
+			}
+			ui.MoveTo(x*2, y)
+			txt := "  "
+			if count > 0 {
+				txt = " " + strconv.Itoa(count)
+			}
+			ui.Print(txt)
 		}
 	}
+
 	g.generation++
 	g.cells = next
-	return changed
-}
 
-func (g game) render(tui tty.TUI) {
-	for x := 0; x < g.width(); x++ {
-		for y := 0; y < g.height(); y++ {
-			tui.MoveTo(x*2, y)
-			if alive := g.at(x, y); alive {
-				tui.SetBackgroundRGB(127, 0, 128+uint8((x+y+g.generation)%256)/2)
-			} else {
-				tui.SetBackgroundRGB(0, 0, 0)
-			}
-			tui.Print("  ")
-		}
-	}
+	// Render bottom banner.
+	ui.SetBackgroundRGB(16, 16, 16)
 
-	tui.SetBackgroundRGB(0, 0, 0)
+	ui.MoveTo(0, g.height)
+	content := fmt.Sprintf("#%d | %d FPS | Generation %d | Population %d", g.numRuns, g.fps, g.generation, len(g.cells))
+	ui.Print(content + strings.Repeat(" ", g.width*2-len(content)))
 
-	tui.MoveTo(0, g.height()+0)
-	tui.Printf("[#%d] Generation %d | Population %d", g.numRuns, g.generation, g.population())
+	ui.MoveTo(0, g.height+1)
+	content = "'+' = speed up | '-' = slow down | 'q' = quit | Press any other key to restart."
+	ui.Print(content + strings.Repeat(" ", g.width*2-len(content)))
 
-	tui.MoveTo(0, g.height()+1)
-	tui.Print("Press 'q' to quit, press any other key to restart.")
-
-	tui.MoveTo(0, g.height()+2)
-	tui.Print("Game of Life - John Conway.")
+	ui.MoveTo(0, g.height+2)
+	content = "Game of Life - John Conway"
+	ui.Print(content + strings.Repeat(" ", g.width*2-len(content)))
 }
