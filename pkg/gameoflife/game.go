@@ -14,7 +14,6 @@ func Run() (err error) {
 	// Hide terminal cursor and restore terminal state on exit.
 	ui := tty.NewTUI()
 	ui.HideCursor()
-	ui.EraseEntireScreen()
 	defer ui.ShowCursor()
 	defer ui.ResetTextStyle()
 
@@ -45,33 +44,29 @@ Base:
 	g.generation = 0
 	g.cells = randomCells(time.Now().UnixNano(), g.width, g.height)
 
-	generationTicker := time.NewTicker(time.Second / time.Duration(g.fps))
-	timeoutTimer := time.NewTimer(5 * time.Minute)
+	ticker := time.NewTicker(time.Second / time.Duration(g.fps))
+	timeout := time.NewTimer(5 * time.Minute)
 
 	// Run game loop.
 	for {
 		select {
-		case <-timeoutTimer.C:
+		case <-timeout.C:
 			goto Base
 		case b := <-input:
-			switch b {
+			switch {
 			default:
 				goto Base
-			case 'q':
+			case b == 'q':
 				return nil
-			case '+':
-				if g.fps < 60 {
-					g.fps++
-				}
-				generationTicker.Reset(time.Second / time.Duration(g.fps))
-			case '-':
-				if g.fps > 1 {
-					g.fps--
-				}
-				generationTicker.Reset(time.Second / time.Duration(g.fps))
+			case b == '+' && g.fps < 60:
+				g.fps++
+				ticker.Reset(time.Second / time.Duration(g.fps))
+			case b == '-' && g.fps > 1:
+				g.fps--
+				ticker.Reset(time.Second / time.Duration(g.fps))
 			}
-		case <-generationTicker.C:
-			g.update(ui)
+		case <-ticker.C:
+			g.tick(ui)
 		}
 	}
 }
@@ -80,22 +75,15 @@ type game struct {
 	numRuns       int
 	generation    int
 	width, height int
-	cells         []cell
+	cells         []bool
 	fps           int
 }
 
-type cell struct {
-	x, y int
-}
-
-func randomCells(seed int64, width, height int) (cells []cell) {
+func randomCells(seed int64, width, height int) (cells []bool) {
 	randr := rand.New(rand.NewSource(seed))
-	for x := 0; x < width; x++ {
-		for y := 0; y < height; y++ {
-			if randr.Int()%2 == 0 {
-				cells = append(cells, cell{x: x, y: y})
-			}
-		}
+	cells = make([]bool, width*height)
+	for i := range cells {
+		cells[i] = randr.Int()%3 == 0
 	}
 	return cells
 }
@@ -103,12 +91,7 @@ func randomCells(seed int64, width, height int) (cells []cell) {
 func (g game) isAlive(x, y int) bool {
 	x = (g.width + x) % g.width
 	y = (g.height + y) % g.height
-	for _, c := range g.cells {
-		if c.x == x && c.y == y {
-			return true
-		}
-	}
-	return false
+	return g.cells[g.width*y+x]
 }
 
 func (g game) countNeighbours(x, y int) (count int) {
@@ -124,29 +107,27 @@ func (g game) countNeighbours(x, y int) (count int) {
 	return count
 }
 
-func (g *game) update(ui tty.TUI) {
-	next := make([]cell, 0, g.width*g.height)
-	for x := 0; x < g.width; x++ {
-		for y := 0; y < g.height; y++ {
-			count := g.countNeighbours(x, y)
-			isAliveNow := g.isAlive(x, y)
-			isAliveNext := (isAliveNow && (count == 2 || count == 3)) || (!isAliveNow && count == 3)
-			if isAliveNext {
-				next = append(next, cell{x: x, y: y})
-			}
-
-			if isAliveNext {
-				ui.SetBackgroundRGB(127, 0, 128+uint8((x+y+g.generation)%256)/2)
-			} else {
-				ui.SetBackgroundRGB(0, 0, 0)
-			}
-			ui.MoveTo(x*2, y)
-			txt := "  "
-			if count > 0 {
-				txt = " " + strconv.Itoa(count)
-			}
-			ui.Print(txt)
+func (g *game) tick(ui tty.TUI) {
+	next := make([]bool, g.width*g.height)
+	population := 0
+	for i, isAliveNow := range g.cells {
+		x, y := (i % g.width), (i / g.width)
+		count := g.countNeighbours(x, y)
+		isAliveNext := (isAliveNow && (count == 2 || count == 3)) || (!isAliveNow && count == 3)
+		if isAliveNext {
+			population++
 		}
+		next[g.width*y+x] = isAliveNext
+
+		txt := "  "
+		if isAliveNext {
+			ui.SetBackgroundRGB(0, 0, 0)
+		} else {
+			txt = " " + strconv.Itoa(count)
+			ui.SetBackgroundRGB(0xBB, 0x11, 0xFF)
+		}
+		ui.MoveTo(x*2, y)
+		ui.Print(txt)
 	}
 
 	g.generation++
@@ -156,7 +137,7 @@ func (g *game) update(ui tty.TUI) {
 	ui.SetBackgroundRGB(16, 16, 16)
 
 	ui.MoveTo(0, g.height)
-	content := fmt.Sprintf("#%d | %d FPS | Generation %d | Population %d", g.numRuns, g.fps, g.generation, len(g.cells))
+	content := fmt.Sprintf("#%d | %d FPS | Generation %d | Population %d", g.numRuns, g.fps, g.generation, population)
 	ui.Print(content + strings.Repeat(" ", g.width*2-len(content)))
 
 	ui.MoveTo(0, g.height+1)
