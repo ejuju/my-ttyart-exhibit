@@ -10,6 +10,6 @@ go install github.com/ejuju/my-ttyart-exhibit@latest
 
 Run
 ```bash
-my-ttyart-exhibit gameoflife
+my-ttyart-exhibit game-of-life
 my-ttyart-exhibit markode
 ```
