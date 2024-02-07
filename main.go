@@ -3,13 +3,15 @@ package main
 import (
 	"os"
 
-	"github.com/ejuju/my-ttyart-exhibit/pkg/gameoflife"
-	"github.com/ejuju/my-ttyart-exhibit/pkg/markode"
+	"github.com/ejuju/my-ttyart-exhibit/internal/algolight"
+	"github.com/ejuju/my-ttyart-exhibit/internal/gameoflife"
+	"github.com/ejuju/my-ttyart-exhibit/internal/markode"
 )
 
 const (
 	cmdGameOfLife = "game-of-life"
 	cmdMarkode    = "markode"
+	cmdAlgolight  = "algolight"
 )
 
 func main() {
@@ -22,6 +24,8 @@ func main() {
 		run = gameoflife.Run
 	case cmdMarkode:
 		run = markode.Run
+	case cmdAlgolight:
+		run = algolight.Run
 	}
 	err := run()
 	if err != nil {

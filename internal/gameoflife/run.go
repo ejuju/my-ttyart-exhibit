@@ -26,7 +26,7 @@ func Run() (err error) {
 	}
 	defer ui.Restore()
 
-	g := game{fps: 10}
+	g := game{fps: 10, withNumbers: true}
 
 Base:
 	// Create new random grid depending on terminal size.
@@ -55,6 +55,8 @@ Base:
 			goto Base
 		case b := <-input:
 			switch {
+			case b == 'n':
+				g.withNumbers = !g.withNumbers
 			case b == 'r':
 				goto Base
 			case b == 'q':
@@ -73,6 +75,7 @@ Base:
 }
 
 type game struct {
+	withNumbers   bool
 	numRuns       int
 	generation    int
 	width, height int
@@ -84,7 +87,7 @@ func randomCells(seed int64, width, height int) (cells []bool) {
 	randr := rand.New(rand.NewSource(seed))
 	cells = make([]bool, width*height)
 	for i := range cells {
-		cells[i] = randr.Int()%3 == 0
+		cells[i] = randr.Int()%2 == 0
 	}
 	return cells
 }
@@ -124,12 +127,20 @@ func (g *game) tick(ui tty.TUI) {
 		if isAliveNext {
 			ui.SetBackgroundRGB(0, 0, 0)
 		} else {
-			txt = " " + strconv.Itoa(count)
+			if g.withNumbers {
+				txt = " " + strconv.Itoa(count)
+			}
 			ui.SetForegroundRGB(0, 0, 0)
-			ui.SetBackgroundRGB(0x39, 0xFF, 0x14)
+			ui.SetBackgroundRGB(125+uint8(g.generation+y+x%256), 18, 255)
 		}
 		ui.MoveTo(x*2, y)
 		ui.Print(txt)
+	}
+
+	// TODO: randomly spawn some new cells.
+	randr := rand.New(rand.NewSource(0))
+	for i := 0; i < len(g.cells)/10; i++ {
+		g.cells[randr.Intn(len(g.cells))] = true
 	}
 
 	g.generation++
@@ -144,7 +155,7 @@ func (g *game) tick(ui tty.TUI) {
 	ui.Print(content + strings.Repeat(" ", g.width*2-len(content)))
 
 	ui.MoveTo(0, g.height+1)
-	content = "Actions: '+' = speed up | '-' = slow down | 'q' = quit | 'r' = restart"
+	content = "Actions: '+' = speed up | '-' = slow down | 'q' = quit | 'r' = restart | 'n' = show/hide numbers"
 	ui.Print(content + strings.Repeat(" ", g.width*2-len(content)))
 
 	ui.MoveTo(0, g.height+2)
