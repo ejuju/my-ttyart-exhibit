@@ -20,6 +20,8 @@ func main() {
 	}
 	var run func() error
 	switch os.Args[1] {
+	default:
+		panic("unknown command")
 	case cmdGameOfLife:
 		run = gameoflife.Run
 	case cmdMarkode:

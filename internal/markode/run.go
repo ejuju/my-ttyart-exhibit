@@ -4,6 +4,7 @@ package markode
 import (
 	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/signal"
 	"time"
@@ -16,7 +17,7 @@ import (
 
 const order = 3
 
-//go:embed run.go
+//go:embed matrix.txt
 var srcCode string
 
 func Run() (err error) {
@@ -38,11 +39,22 @@ func Run() (err error) {
 		lastchars:   start,
 	}
 
+	inputs := make(chan string)
+	srv := NewServer(inputs)
+	go func() {
+		err := http.ListenAndServe(":8080", srv)
+		if err != nil {
+			panic(err)
+		}
+	}()
+
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt)
 	ticker := time.NewTicker(time.Second / time.Duration(g.charsPerSec))
 	for {
 		select {
+		case txt := <-inputs:
+			mc.learn([]rune(txt))
 		case <-interrupt:
 			return nil
 		case <-ticker.C:
@@ -72,12 +84,15 @@ type markovChain map[string][]rune
 
 func newMarkovChain(corpus string) (mc markovChain) {
 	mc = markovChain{}
-	corpusChars := []rune(corpus)
-	for i := 0; i < len(corpusChars)-order; i++ {
-		currSequence := string(corpusChars[i : i+order])
-		mc[currSequence] = append(mc[currSequence], corpusChars[i+order])
-	}
+	mc.learn([]rune(corpus))
 	return mc
+}
+
+func (mc *markovChain) learn(corpus []rune) {
+	for i := 0; i < len(corpus)-order; i++ {
+		currSequence := string(corpus[i : i+order])
+		(*mc)[currSequence] = append((*mc)[currSequence], corpus[i+order])
+	}
 }
 
 func (mc markovChain) next(ran *rand.Rand, str string) rune {
@@ -88,7 +103,9 @@ func (mc markovChain) next(ran *rand.Rand, str string) rune {
 	lastNchars := []rune(str)[strNumChars-order:]
 	options, ok := mc[string(lastNchars)]
 	if !ok {
-		return '\n'
+		for _, v := range mc {
+			return v[rand.Intn(len(v))]
+		}
 	}
 	return options[ran.Intn(len(options))]
 }

@@ -14,4 +14,6 @@ my-ttyart-exhibit game-of-life
 my-ttyart-exhibit markode
 my-ttyart-exhibit algolight
 ```
+Ideas:
+- Wave collapse function
 
